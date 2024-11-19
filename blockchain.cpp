@@ -9,18 +9,21 @@
 #include <algorithm>
 
 // Fonction pour calculer le hash SHA-256
-std::string sha256(const std::string& str) {
+std::string sha256(const std::string& str) 
+{
     unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256((unsigned char*)str.c_str(), str.size(), hash);
     std::stringstream ss;
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) 
+    {
         ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
     }
     return ss.str();
 }
 
 // Fonction pour générer un nonce basé sur une preuve de travail
-int calculateNonce(const std::string& data) {
+int calculateNonce(const std::string& data) 
+{
     int nonce = 0;
     std::string hash;
     do {
@@ -33,7 +36,8 @@ int calculateNonce(const std::string& data) {
 }
 
 // Structure pour représenter un bloc
-struct Block {
+struct Block 
+{
     std::string id;
     std::string previous_id;
     std::vector<std::string> transactions;
@@ -42,17 +46,20 @@ struct Block {
 
     // Constructeur du bloc
     Block(const std::string& previous_id, const std::vector<std::string>& transactions)
-        : previous_id(previous_id), transactions(transactions), timestamp(std::time(nullptr)), nonce(0) {
+        : previous_id(previous_id), transactions(transactions), timestamp(std::time(nullptr)), nonce(0) 
+{
         id = generateId();
     }
 
     // Générer un ID basé sur les données du bloc avec preuve de travail
-    std::string generateId() {
+    std::string generateId() 
+{
         std::string hash;
         do {
             std::stringstream ss;
             ss << previous_id << timestamp << nonce;
-            for (const auto& transaction : transactions) {
+            for (const auto& transaction : transactions) 
+            {
                 ss << transaction;
             }
             hash = sha256(ss.str());
@@ -77,39 +84,47 @@ struct Block {
 };
 
 // Classe pour gérer la blockchain
-class Blockchain {
+class Blockchain 
+{
 private:
     std::vector<Block> chain;
 
 public:
-    Blockchain() {
+    Blockchain() 
+{
         chain.emplace_back("0", std::vector<std::string>()); // Bloc génésis
     }
 
-    void addBlock(const std::vector<std::string>& transactions) {
+    void addBlock(const std::vector<std::string>& transactions) 
+{
         std::string previous_id = chain.back().id;
         chain.emplace_back(previous_id, transactions);
     }
 
-    const std::vector<Block>& getChain() const {
+    const std::vector<Block>& getChain() const 
+{
         return chain;
     }
 
-    void display() const {
-        for (const auto& block : chain) {
+    void display() const 
+{
+        for (const auto& block : chain) 
+        {
             block.display();
         }
     }
 };
 
 // Fonction pour enregistrer un vote crypté
-std::string registerVote(const std::string& voter_id, const std::string& vote) {
+std::string registerVote(const std::string& voter_id, const std::string& vote) 
+{
     std::string vote_data = voter_id + ":" + vote;  // Combiner l'ID du votant et son vote
     return sha256(vote_data); // Retourner un vote crypté
 }
 
 // Fonction pour afficher les informations détaillées d'un votant
-void displayVoterTransaction(int voter_number, const std::string& voter_id_hashed, const std::string& vote) {
+void displayVoterTransaction(int voter_number, const std::string& voter_id_hashed, const std::string& vote) 
+{
     std::cout << "\n=== Votant " << voter_number << " ===\n";
     std::cout << "ID crypte : " << voter_id_hashed << "\n";
     std::cout << "Vote : " << vote << "\n";
@@ -126,16 +141,21 @@ void displayVoterTransaction(int voter_number, const std::string& voter_id_hashe
 }
 
 // Fonction pour compter les résultats des votes
-std::unordered_map<std::string, int> countVotes(const Blockchain& blockchain) {
+std::unordered_map<std::string, int> countVotes(const Blockchain& blockchain) 
+{
     std::unordered_map<std::string, int> results;
 
-    for (const auto& block : blockchain.getChain()) {
-        for (const auto& transaction : block.transactions) {
+    for (const auto& block : blockchain.getChain()) 
+    {
+        for (const auto& transaction : block.transactions) 
+        {
             // Ajouter votre logique pour déterminer quel vote correspond à quel candidat
-            if (transaction.find("bleu") != std::string::npos) {
+            if (transaction.find("bleu") != std::string::npos) 
+            {
                 results["bleu"]++;
             }
-            else if (transaction.find("rouge") != std::string::npos) {
+            else if (transaction.find("rouge") != std::string::npos) 
+            {
                 results["rouge"]++;
             }
         }
