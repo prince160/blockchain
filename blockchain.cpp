@@ -6,217 +6,198 @@
 #include <unordered_map>
 #include <openssl/sha.h>
 #include <iomanip>
+#include <algorithm>
 
 // Fonction pour calculer le hash SHA-256
-std::string sha256(const std::string& str)
-{
+std::string sha256(const std::string& str) {
     unsigned char hash[SHA256_DIGEST_LENGTH];
     SHA256((unsigned char*)str.c_str(), str.size(), hash);
     std::stringstream ss;
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i)
-    {
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
         ss << std::hex << std::setw(2) << std::setfill('0') << (int)hash[i];
     }
     return ss.str();
 }
 
-// Structure pour représenter un nœud de l'arbre de Merkle
-struct MerkleNode {
-    std::string hash; // Hachage du nœud
-    std::vector<MerkleNode> children; // Enfants du nœud
-
-    MerkleNode(const std::string& hash) : hash(hash) {}
-};
-
-// Structure pour représenter l'arbre de Merkle
-struct MerkleTree {
-    MerkleNode root; // Racine de l'arbre
-
-    MerkleTree(const std::vector<std::string>& transactionHashes) : root(computeMerkleRoot(transactionHashes)) {}
-
-    // Fonction pour calculer la racine de Merkle et construire l'arbre
-    MerkleNode computeMerkleRoot(std::vector<std::string> transactionHashes) {
-        if (transactionHashes.empty())
-            return MerkleNode("");
-
-        std::vector<MerkleNode> nodes;
-
-        // Créer des nœuds de feuille pour les hachages de transactions
-        for (const auto& hash : transactionHashes) {
-            nodes.emplace_back(hash);
-        }
-
-        while (nodes.size() > 1) {
-            if (nodes.size() % 2 != 0) {
-                nodes.push_back(nodes.back()); // Dupliquer le dernier hachage si impair
-            }
-
-            std::vector<MerkleNode> newLevel;
-            for (size_t i = 0; i < nodes.size(); i += 2) {
-                std::string combinedHash = sha256(nodes[i].hash + nodes[i + 1].hash);
-                MerkleNode parent(combinedHash);
-                parent.children.push_back(nodes[i]); // Ajouter le premier enfant
-                parent.children.push_back(nodes[i + 1]); // Ajouter le deuxième enfant
-                newLevel.push_back(parent);
-            }
-            nodes = newLevel; // Passer au niveau suivant
-        }
-
-        return nodes[0]; // Retourner la racine de Merkle
-    }
-
-    // Méthode d'affichage pour l'arbre de Merkle
-    void display() const {
-        std::cout << "Merkle Root: " << root.hash << "\n";
-    }
-};
+// Fonction pour générer un nonce basé sur une preuve de travail
+int calculateNonce(const std::string& data) {
+    int nonce = 0;
+    std::string hash;
+    do {
+        std::stringstream ss;
+        ss << data << nonce;
+        hash = sha256(ss.str());
+        nonce++;
+    } while (hash.substr(0, 4) != "0000"); // Preuve de travail : le hash doit commencer par "0000"
+    return nonce;
+}
 
 // Structure pour représenter un bloc
-struct Block
-{
+struct Block {
     std::string id;
     std::string previous_id;
     std::vector<std::string> transactions;
     std::time_t timestamp;
     int nonce;
-    std::unordered_map<std::string, int> balances;
-    MerkleTree merkleTree; // Ajout de l'arbre de Merkle
 
     // Constructeur du bloc
-    Block(const std::string& previous_id, const std::vector<std::string>& transactions, const std::unordered_map<std::string, int>& previous_balances)
-        : previous_id(previous_id), transactions(transactions), timestamp(std::time(nullptr)), nonce(0), balances(previous_balances),
-        merkleTree(getTransactionHashes(transactions)) // Initialiser l'arbre de Merkle
-    {
-        for (const auto& transaction : transactions)
-        {
-            applyTransaction(transaction);
-        }
-
+    Block(const std::string& previous_id, const std::vector<std::string>& transactions)
+        : previous_id(previous_id), transactions(transactions), timestamp(std::time(nullptr)), nonce(0) {
         id = generateId();
     }
 
-    // Récupérer les hachages des transactions
-    std::vector<std::string> getTransactionHashes(const std::vector<std::string>& transactions) {
-        std::vector<std::string> transactionHashes;
-        for (const auto& transaction : transactions) {
-            transactionHashes.push_back(sha256(transaction)); // Hachage de chaque transaction
-        }
-        return transactionHashes;
-    }
-
-    // Appliquer une transaction et mettre à jour les soldes
-    void applyTransaction(const std::string& transaction)
-    {
-        std::istringstream ss(transaction);
-        std::string from, to, amountStr;
-        int amount;
-
-        // Parsing de la transaction au format "Expéditeur->Destinataire:Montant"
-        std::getline(ss, from, '-');
-        ss.ignore(1);
-        std::getline(ss, to, ':');
-        std::getline(ss, amountStr);
-        amount = std::stoi(amountStr);
-
-        // Vérification que le montant est positif
-        if (amount <= 0)
-        {
-            std::cerr << "Erreur : le montant de la transaction doit être positif.\n";
-            return;
-        }
-
-        // Vérification que l'expéditeur a des fonds suffisants
-        if (balances[from] < amount)
-        {
-            std::cerr << "Erreur : fonds insuffisants pour le compte " << from << ".\n";
-            return;
-        }
-
-        // Effectuer la transaction si les vérifications sont satisfaites
-        balances[from] -= amount;
-        balances[to] += amount;
-
-        // Affichage de la transaction réussie
-        std::cout << "Transaction réussie : " << from << " -> " << to << " : " << amount << "\n";
-    }
-
     // Générer un ID basé sur les données du bloc avec preuve de travail
-    std::string generateId()
-    {
+    std::string generateId() {
         std::string hash;
-        do
-        {
+        do {
             std::stringstream ss;
             ss << previous_id << timestamp << nonce;
-            for (const auto& transaction : transactions)
-            {
+            for (const auto& transaction : transactions) {
                 ss << transaction;
             }
             hash = sha256(ss.str());
             nonce++;
-        } while (hash.substr(0, 4) != "0000");
-
+        } while (hash.substr(0, 4) != "0000"); // Preuve de travail : hash doit commencer par "0000"
         return hash;
     }
 
     // Affichage du bloc
-    void display() const
-    {
+    void display() const {
+        std::cout << "-------------------------\n";
+        std::cout << "Bloc ID: " << id << "\n";
         std::cout << "Previous ID: " << previous_id << "\n";
         std::cout << "Timestamp: " << timestamp << "\n";
         std::cout << "Nonce: " << nonce << "\n";
-        std::cout << "Bloc ID: " << id << "\n";
-        merkleTree.display(); // Afficher la racine de Merkle
-        std::cout << "Transactions:\n";
-        for (const auto& transaction : transactions)
-        {
+        std::cout << "Transactions (Votes cryptes):\n";
+        for (const auto& transaction : transactions) {
             std::cout << "  " << transaction << "\n";
         }
-        std::cout << "Balances:\n";
-        for (auto it = balances.begin(); it != balances.end(); ++it) // Modifié pour compatibilité C++11
-        {
-            std::cout << "  " << it->first << " : " << it->second << "\n";
-        }
-        std::cout << "\n";
+        std::cout << "-------------------------\n";
     }
 };
 
 // Classe pour gérer la blockchain
-class Blockchain
-{
+class Blockchain {
 private:
     std::vector<Block> chain;
+
 public:
-    Blockchain()
-    {
-        std::unordered_map<std::string, int> genesisBalances = { {"A", 0}, {"B", 10}, {"C", 0} };
-        chain.emplace_back("0", std::vector<std::string>(), genesisBalances);
+    Blockchain() {
+        chain.emplace_back("0", std::vector<std::string>()); // Bloc génésis
     }
 
-    void addBlock(const std::vector<std::string>& transactions)
-    {
+    void addBlock(const std::vector<std::string>& transactions) {
         std::string previous_id = chain.back().id;
-        const auto& previous_balances = chain.back().balances;
-        chain.emplace_back(previous_id, transactions, previous_balances);
+        chain.emplace_back(previous_id, transactions);
     }
 
-    void display() const
-    {
-        for (const auto& block : chain)
-        {
+    const std::vector<Block>& getChain() const {
+        return chain;
+    }
+
+    void display() const {
+        for (const auto& block : chain) {
             block.display();
         }
     }
 };
 
-int main()
-{
+// Fonction pour enregistrer un vote crypté
+std::string registerVote(const std::string& voter_id, const std::string& vote) {
+    std::string vote_data = voter_id + ":" + vote;  // Combiner l'ID du votant et son vote
+    return sha256(vote_data); // Retourner un vote crypté
+}
+
+// Fonction pour afficher les informations détaillées d'un votant
+void displayVoterTransaction(int voter_number, const std::string& voter_id_hashed, const std::string& vote) {
+    std::cout << "\n=== Votant " << voter_number << " ===\n";
+    std::cout << "ID crypte : " << voter_id_hashed << "\n";
+    std::cout << "Vote : " << vote << "\n";
+
+    // Calculer le nonce pour chaque transaction individuelle
+    std::string transaction_data = voter_id_hashed + ":" + vote;
+    int nonce = calculateNonce(transaction_data);
+    std::cout << "Nonce individuel : " << nonce << "\n";
+
+    // Afficher la transaction cryptée
+    std::cout << "Transaction cryptee : " << sha256(transaction_data + std::to_string(nonce)) << "\n";
+
+    std::cout << "\n"; // Ajout d'une ligne vide
+}
+
+// Fonction pour compter les résultats des votes
+std::unordered_map<std::string, int> countVotes(const Blockchain& blockchain) {
+    std::unordered_map<std::string, int> results;
+
+    for (const auto& block : blockchain.getChain()) {
+        for (const auto& transaction : block.transactions) {
+            // Ajouter votre logique pour déterminer quel vote correspond à quel candidat
+            if (transaction.find("bleu") != std::string::npos) {
+                results["bleu"]++;
+            }
+            else if (transaction.find("rouge") != std::string::npos) {
+                results["rouge"]++;
+            }
+        }
+    }
+    return results;
+}
+
+int main() {
     Blockchain blockchain;
 
-    blockchain.addBlock({ "B->A:5", "B->C:3" });
-    blockchain.addBlock({ "A->B:2", "C->A:1" });
-    blockchain.addBlock({ "C->B:4", "A->C:2" });
+    std::cout << "=== Systeme de vote anonyme ===\n";
+    std::cout << "Chaque votant peut choisir une couleur : bleu ou rouge.\n";
+    std::cout << "Les votes sont cryptes et ajoutes a une blockchain.\n\n";
 
+    int votants = 3; // Nombre de votants
+    std::vector<std::string> votes;
+    std::vector<std::pair<std::string, std::string>> voters; // Stocke les ID cryptés et les votes
+
+    for (int i = 1; i <= votants; ++i) {
+        std::string voter_id;
+        std::cout << "Votant " << i << ", entrez votre numero d'identifiant (numero unique) : ";
+        std::cin >> voter_id;
+        std::string voter_id_hashed = sha256(voter_id);
+
+        std::string vote;
+        std::cout << "Entrez votre choix (bleu/rouge) : ";
+        std::cin >> vote;
+
+        // Validation du vote
+        std::transform(vote.begin(), vote.end(), vote.begin(), ::tolower);
+        while (vote != "bleu" && vote != "rouge") {
+            std::cout << "Vote invalide ! Veuillez saisir 'bleu' ou 'rouge' : ";
+            std::cin >> vote;
+            std::transform(vote.begin(), vote.end(), vote.begin(), ::tolower);
+        }
+
+        // Enregistrer le vote crypté et les informations du votant
+        votes.push_back(registerVote(voter_id_hashed, vote));
+        voters.push_back({ voter_id_hashed, vote });
+
+        std::cout << "Votre ID crypte est : " << voter_id_hashed << "\n\n"; // Ajout d'une ligne vide
+    }
+
+    // Ajouter un bloc avec les votes à la blockchain
+    blockchain.addBlock(votes);
+
+    // Afficher les informations unitaires de chaque votant
+    std::cout << "\n=== Details des transactions par votant ===\n";
+    for (size_t i = 0; i < voters.size(); ++i) {
+        displayVoterTransaction(i + 1, voters[i].first, voters[i].second);
+    }
+
+    // Afficher les résultats des votes
+    std::unordered_map<std::string, int> results = countVotes(blockchain);
+
+    std::cout << "\n=== Resultats des votes ===\n";
+    for (const auto& result : results) {
+        std::cout << "Couleur " << result.first << " : " << result.second << " vote(s)\n";
+    }
+
+    // Afficher la blockchain
+    std::cout << "\n=== Blockchain ===\n";
     blockchain.display();
 
     return 0;
